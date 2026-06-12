@@ -3,24 +3,21 @@
 #include <windows.h>
 #include <algorithm>
 
-Monitor::Monitor()
-    : lastRefresh_(std::chrono::steady_clock::now())
+Monitor::Monitor(std::atomic<bool>& running)
+    : running_(running)
+    , lastRefresh_(std::chrono::steady_clock::now())
 {
     ApplyFilterAndSort();
 }
 
 void Monitor::Run()
 {
-    running_ = true;
-    // Force initial render
     Refresh();
 
     while (running_) {
-        // Non-blocking keyboard input
         if (_kbhit()) {
             int ch = _getch();
             if (ch == 0 || ch == 0xE0) {
-                // Extended key (arrows, page up/down, etc.)
                 int ch2 = _getch();
                 HandleInput(0xE000 | ch2);
             } else {
@@ -28,92 +25,59 @@ void Monitor::Run()
             }
         }
 
-        // Auto-refresh when interval elapses and not paused
         if (!paused_) {
-            auto now     = std::chrono::steady_clock::now();
-            auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(now - lastRefresh_).count();
-            if (elapsed >= refreshInterval_) {
-                Refresh();
-            }
+            auto now = std::chrono::steady_clock::now();
+            auto sec = std::chrono::duration_cast<std::chrono::seconds>(now - lastRefresh_).count();
+            if (sec >= refreshInterval_) Refresh();
         }
 
         Sleep(50);
     }
+
+    // Restore cursor before exit
+    ui_.ShowCursor();
 }
 
 void Monitor::HandleInput(int ch)
 {
-    const int KEY_UP    = 0xE048;
-    const int KEY_DOWN  = 0xE050;
-    const int KEY_PGUP  = 0xE049;
-    const int KEY_PGDN  = 0xE051;
-    const int KEY_HOME  = 0xE047;
-    const int KEY_END   = 0xE04F;
+    constexpr int KEY_UP   = 0xE048;
+    constexpr int KEY_DOWN = 0xE050;
+    constexpr int KEY_PGUP = 0xE049;
+    constexpr int KEY_PGDN = 0xE051;
+    constexpr int KEY_HOME = 0xE047;
+    constexpr int KEY_END  = 0xE04F;
 
     switch (ch) {
-    // Quit
-    case 'q': case 'Q':
-        running_ = false;
-        break;
+    case 'q': case 'Q': running_ = false; break;
+    case 'r': case 'R': Refresh(); break;
+    case 'p': case 'P': paused_ = !paused_; break;
 
-    // Force refresh
-    case 'r': case 'R':
-        Refresh();
-        break;
-
-    // Toggle pause
-    case 'p': case 'P':
-        paused_ = !paused_;
-        break;
-
-    // Cycle filter: ALL -> OK -> WARN -> ERR -> ALL
     case 'f': case 'F':
-        switch (filter_) {
-        case FilterMode::ALL:  filter_ = FilterMode::OK;   break;
-        case FilterMode::OK:   filter_ = FilterMode::WARN; break;
-        case FilterMode::WARN: filter_ = FilterMode::ERR;  break;
-        case FilterMode::ERR:  filter_ = FilterMode::ALL;  break;
-        }
-        scrollOffset_ = 0;
-        selectedRow_  = 0;
+        filter_ = static_cast<FilterMode>((static_cast<int>(filter_) + 1) % 4);
+        scrollOffset_ = 0; selectedRow_ = 0;
         ApplyFilterAndSort();
         break;
 
-    // Cycle sort: KEY -> STATUS -> TYPE -> TIME -> KEY
     case 's': case 'S':
-        switch (sort_) {
-        case SortMode::KEY:    sort_ = SortMode::STATUS; break;
-        case SortMode::STATUS: sort_ = SortMode::TYPE;   break;
-        case SortMode::TYPE:   sort_ = SortMode::TIME;   break;
-        case SortMode::TIME:   sort_ = SortMode::KEY;    break;
-        }
+        sort_ = static_cast<SortMode>((static_cast<int>(sort_) + 1) % 4);
         ApplyFilterAndSort();
         break;
 
-    // Increase refresh interval
-    case '+': case '=':
-        if (refreshInterval_ < 60) ++refreshInterval_;
-        break;
+    case '+': case '=': if (refreshInterval_ < 60) ++refreshInterval_; break;
+    case '-': case '_': if (refreshInterval_ >  1) --refreshInterval_; break;
 
-    // Decrease refresh interval
-    case '-': case '_':
-        if (refreshInterval_ > 1) --refreshInterval_;
-        break;
-
-    // Scroll
     case KEY_UP:   ScrollUp();   break;
     case KEY_DOWN: ScrollDown(); break;
     case KEY_PGUP: PageUp();     break;
     case KEY_PGDN: PageDown();   break;
 
     case KEY_HOME:
-        scrollOffset_ = 0;
-        selectedRow_  = 0;
+        scrollOffset_ = 0; selectedRow_ = 0;
         break;
 
     case KEY_END:
         if (!filtered_.empty()) {
-            selectedRow_  = (int)filtered_.size() - 1;
+            selectedRow_ = (int)filtered_.size() - 1;
             int vis = ui_.GetVisibleRows();
             scrollOffset_ = std::max(0, (int)filtered_.size() - vis);
         }
@@ -130,17 +94,17 @@ void Monitor::Refresh()
     lastRefresh_ = std::chrono::steady_clock::now();
 
     RenderState rs;
-    rs.entries        = &filtered_;
-    rs.scrollOffset   = scrollOffset_;
-    rs.selectedRow    = selectedRow_;
-    rs.okCount        = store_.CountByStatus(DataStatus::OK);
-    rs.warnCount      = store_.CountByStatus(DataStatus::WARN);
-    rs.errCount       = store_.CountByStatus(DataStatus::ERR);
-    rs.refreshInterval= refreshInterval_;
-    rs.nextRefreshSec = GetNextRefreshSec();
-    rs.filterLabel    = GetFilterLabel();
-    rs.sortLabel      = GetSortLabel();
-    rs.paused         = paused_;
+    rs.entries         = &filtered_;
+    rs.scrollOffset    = scrollOffset_;
+    rs.selectedRow     = selectedRow_;
+    rs.okCount         = store_.CountByStatus(DataStatus::OK);
+    rs.warnCount       = store_.CountByStatus(DataStatus::WARN);
+    rs.errCount        = store_.CountByStatus(DataStatus::ERR);
+    rs.refreshInterval = refreshInterval_;
+    rs.nextRefreshSec  = GetNextRefreshSec();
+    rs.filterLabel     = GetFilterLabel();
+    rs.sortLabel       = GetSortLabel();
+    rs.paused          = paused_;
 
     ui_.Render(rs);
 }
@@ -181,7 +145,6 @@ void Monitor::ApplyFilterAndSort()
         break;
     }
 
-    // Clamp selected row
     if (selectedRow_ >= (int)filtered_.size())
         selectedRow_ = std::max(0, (int)filtered_.size() - 1);
     if (scrollOffset_ > selectedRow_)
@@ -192,8 +155,7 @@ void Monitor::ScrollUp()
 {
     if (selectedRow_ > 0) {
         --selectedRow_;
-        if (selectedRow_ < scrollOffset_)
-            scrollOffset_ = selectedRow_;
+        if (selectedRow_ < scrollOffset_) scrollOffset_ = selectedRow_;
     }
 }
 
@@ -246,8 +208,8 @@ std::string Monitor::GetSortLabel() const
 
 int Monitor::GetNextRefreshSec() const
 {
-    auto now     = std::chrono::steady_clock::now();
-    auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(now - lastRefresh_).count();
-    int  rem     = refreshInterval_ - (int)elapsed;
+    auto now = std::chrono::steady_clock::now();
+    auto sec = std::chrono::duration_cast<std::chrono::seconds>(now - lastRefresh_).count();
+    int  rem = refreshInterval_ - (int)sec;
     return rem > 0 ? rem : 0;
 }

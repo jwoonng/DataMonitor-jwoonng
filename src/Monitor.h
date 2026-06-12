@@ -1,6 +1,7 @@
 #pragma once
 #include "DataStore.h"
 #include "ConsoleUI.h"
+#include <atomic>
 #include <chrono>
 #include <vector>
 #include <string>
@@ -10,16 +11,17 @@ enum class SortMode   { KEY, STATUS, TYPE, TIME };
 
 class Monitor {
 public:
-    Monitor();
+    explicit Monitor(std::atomic<bool>& running);
     void Run();
 
 private:
+    std::atomic<bool>& running_;
+
     DataStore  store_;
     ConsoleUI  ui_;
 
-    bool       running_          = false;
     bool       paused_           = false;
-    int        refreshInterval_  = 2;   // seconds
+    int        refreshInterval_  = 2;
     FilterMode filter_           = FilterMode::ALL;
     SortMode   sort_             = SortMode::KEY;
     int        scrollOffset_     = 0;

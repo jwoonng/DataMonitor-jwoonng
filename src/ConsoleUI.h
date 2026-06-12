@@ -20,16 +20,15 @@ struct RenderState {
     bool paused         = false;
 };
 
-namespace Colors {
-    constexpr WORD NORMAL    = FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE;
-    constexpr WORD BRIGHT    = FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE | FOREGROUND_INTENSITY;
-    constexpr WORD OK_COLOR  = FOREGROUND_GREEN | FOREGROUND_INTENSITY;
-    constexpr WORD WARN_COLOR= FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_INTENSITY;
-    constexpr WORD ERR_COLOR = FOREGROUND_RED | FOREGROUND_INTENSITY;
-    constexpr WORD TITLE     = FOREGROUND_GREEN | FOREGROUND_BLUE | FOREGROUND_INTENSITY;
-    constexpr WORD BORDER    = FOREGROUND_BLUE | FOREGROUND_INTENSITY;
-    constexpr WORD DIM       = FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE;
-    constexpr WORD SEL_BG    = BACKGROUND_BLUE | FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE | FOREGROUND_INTENSITY;
+namespace Color {
+    constexpr WORD NORMAL = FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE;
+    constexpr WORD BRIGHT = FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE | FOREGROUND_INTENSITY;
+    constexpr WORD OK     = FOREGROUND_GREEN | FOREGROUND_INTENSITY;
+    constexpr WORD WARN   = FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_INTENSITY;
+    constexpr WORD ERR    = FOREGROUND_RED | FOREGROUND_INTENSITY;
+    constexpr WORD DIM    = FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE;
+    constexpr WORD SEL    = BACKGROUND_BLUE | FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE | FOREGROUND_INTENSITY;
+    constexpr WORD CYAN   = FOREGROUND_GREEN | FOREGROUND_BLUE | FOREGROUND_INTENSITY;
 }
 
 class ConsoleUI {
@@ -45,28 +44,25 @@ private:
     int    width_  = 100;
     int    height_ = 40;
 
-    void GotoXY(int x, int y);
-    void SetColor(WORD color);
-    void ResetColor();
-    void WriteStr(const std::string& s);
-    void PrintLine(int y, const std::string& s, WORD color = Colors::NORMAL);
-    void DrawBorder(int y, bool isHeader = false);
-    void DrawDataRow(int screenY, const DataEntry& e, bool selected);
+    void   GotoXY(int x, int y);
+    void   SetColor(WORD c);
+    void   Print(const std::string& s);
+    void   PrintColored(const std::string& s, WORD c);
+    void   PrintLine(int y, const std::string& s, WORD c = Color::NORMAL);
+    void   PrintPadded(int y, const std::string& s, WORD c = Color::NORMAL);
+    void   DrawDataRow(int y, const DataEntry& e, bool selected);
 
-    std::string Pad(const std::string& s, int w, bool left = false) const;
+    std::string Fit(const std::string& s, int w, bool rightAlign = false) const;
     std::string FormatTime(time_t t) const;
     WORD        StatusColor(DataStatus s) const;
     std::string StatusStr(DataStatus s) const;
+    void        UpdateSize();
 
-    void UpdateConsoleSize();
-
-    // Fixed column content widths (excluding border chars)
-    static constexpr int W_ID   = 3;
-    static constexpr int W_KEY  = 26;
+    // Column content widths
+    static constexpr int W_ID   = 4;
+    static constexpr int W_KEY  = 30;
     static constexpr int W_VAL  = 15;
-    static constexpr int W_TYPE = 7;
+    static constexpr int W_TYPE = 8;
     static constexpr int W_STS  = 5;
     static constexpr int W_TIME = 8;
-    // Total row width: 7 borders + 6*2 spaces + sum = 7+12+64 = 83
-    static constexpr int TABLE_WIDTH = 83;
 };
